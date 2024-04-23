@@ -1,4 +1,5 @@
-#include <bool.h>
+#include <ctype.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -24,7 +25,7 @@ typedef struct
     // Extended boot record
 
     uint8_t  DriveNumber;
-    uint8_t  _Reserved;
+    uint8_t  Reserved;
     uint8_t  Signature;
     uint32_t VolumeId;
     uint8_t  VolumeLabel[11];
@@ -35,7 +36,7 @@ typedef struct
 {
     uint8_t Name[11];
     uint8_t Attributes;
-    uint8_t _Reserved;
+    uint8_t Reserved;
     uint8_t CreatedTimeTenths;
     uint16_t CreatedTime;
     uint16_t CreatedDate;
@@ -47,15 +48,18 @@ typedef struct
     uint32_t Size;
 } __attribute__((packed)) DirectoryEntry;
 
-BootSector g_BootSector;
-uint8_t    g_Fat = NULL;
+BootSector      g_BootSector;
+uint8_t*        g_Fat = NULL;
 DirectoryEntry* g_RootDirectory = NULL;
+uint32_t  g_RootDirectoryEnd;
 
 bool readBootSector(FILE* disk)
 {
-    return fread(&g_BootSector, sizeof(g_BootSector, 1, disk)) > 0;
+    return fread(&g_BootSector, sizeof(g_BootSector), 1, disk) > 0;
 }
 
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "ConstantConditionsOC"
 bool readSectors(FILE* disk, uint32_t lba, uint32_t count, void* bufferOut)
 {
     bool ok = true;
@@ -65,6 +69,7 @@ bool readSectors(FILE* disk, uint32_t lba, uint32_t count, void* bufferOut)
 
     return ok;
 }
+#pragma clang diagnostic pop
 
 bool readFat(FILE* disk)
 {
@@ -82,10 +87,13 @@ bool readRootDirectory(FILE* disk)
         sectors++;
     }
 
+    g_RootDirectoryEnd = lba + sectors;
     g_RootDirectory = (DirectoryEntry*) malloc(sectors * g_BootSector.BytesPerSector);
     return readSectors(disk, lba, sectors, g_RootDirectory);
 }
 
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "NullDereference"
 DirectoryEntry* findFile(const char* name)
 {
     for (uint32_t i = 0; i < g_BootSector.DirEntryCount; i++) {
@@ -95,7 +103,35 @@ DirectoryEntry* findFile(const char* name)
     }
     return NULL;
 }
+#pragma clang diagnostic pop
 
+
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "ConstantConditionsOC"
+#pragma ide diagnostic ignored "NullDereference"
+bool readFile(DirectoryEntry* fileEntry, FILE* disk, uint8_t* outputBuffer)
+{
+    bool ok = true;
+    uint16_t currentCluster = fileEntry->FirstClusterLow;
+
+
+    do {
+        uint32_t lba = g_RootDirectoryEnd + (currentCluster - 2) * g_BootSector.SectorsPerCluster;
+        ok = ok && readSectors(disk, lba, g_BootSector.SectorsPerCluster, outputBuffer);
+        outputBuffer += g_BootSector.SectorsPerCluster * g_BootSector.BytesPerSector;
+
+        uint32_t fatIndex = currentCluster * 3 / 2;
+        if (currentCluster % 2 == 0)
+            currentCluster = (*(uint16_t*)(g_Fat + fatIndex)) & 0x0FFF;
+        else
+            currentCluster = (*(uint16_t*)(g_Fat + fatIndex)) >> 4;
+
+
+    } while (ok && currentCluster < 0xFF8);
+
+    return ok;
+}
+#pragma clang diagnostic pop
 
 int main(int argc, char** argv)
 {
@@ -130,12 +166,30 @@ int main(int argc, char** argv)
 
     DirectoryEntry* fileEntry = findFile(argv[2]);
     if (!fileEntry) {
-        fprintf(stderr, "Could not find file!\n");
+        fprintf(stderr, "Could not find file %s!\n", argv[2]);
         free(g_Fat);
         free(g_RootDirectory);
         return -5;
     }
 
+    uint8_t* buffer = (uint8_t*) malloc(fileEntry->Size + g_BootSector.BytesPerSector);
+    if(readFile(fileEntry, disk, buffer)) {
+        fprintf(stderr, "Could not read file %s!\n", argv[2]);
+        free(g_Fat);
+        free(g_RootDirectory);
+        free(buffer);
+        return -6;
+    }
+
+    for (size_t i = 0; i < fileEntry->Size; i++)
+    {
+        if (isprint(buffer[i]))
+            fputc(buffer[i], stdout);
+        else
+            printf("<%02x>", buffer[i]);
+    }
+
+    free(buffer);
     free(g_Fat);
     free(g_RootDirectory);
     return 0;
