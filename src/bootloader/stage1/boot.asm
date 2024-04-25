@@ -117,26 +117,26 @@ start:
     mov di, buffer
 
 
-.search_kernel:
-    mov si, file_kernel_bin
+.search_stage2:
+    mov si, file_stage2_bin
     mov cx, 11                      ; compare up to 11 char
     push di
     repe cmpsb
     pop di
-    je .found_kernel
+    je .found_stage2
 
     add di, 32
     inc bx
     cmp bx, [bdb_dir_entries_count]
-    jl .search_kernel
+    jl .search_stage2
 
-    ;in case of kernel not found
-    jmp kernel_not_found_error
+    ;in case of stage2 not found
+    jmp stage2_not_found_error
 
-.found_kernel:
+.found_stage2:
     ;di should have the address
     mov ax, [di +26]                ;first logical cluster field
-    mov [kernel_cluster], ax
+    mov [stage2_cluster], ax
 
     ;load FAT from disk to mem
     mov ax, [bdb_reserved_sectors]
@@ -146,14 +146,14 @@ start:
     call disk_read
 
     ;read and process FAT chain
-    mov bx, KERNEL_LOAD_SEGMENT
+    mov bx, STAGE2_LOAD_SEGMENT
     mov es, bx
-    mov bx, KERNEL_LOAD_OFFSET
+    mov bx, STAGE2_LOAD_OFFSET
 
-.load_kernel_loop:
+.load_stage2_loop:
 
     ;read next cluster
-    mov ax, [kernel_cluster]
+    mov ax, [stage2_cluster]
 
     ;temp hardcoded val :^(
     add ax, 31
@@ -165,7 +165,7 @@ start:
     add bx, [bdb_bytes_per_sector]
 
     ;computer location of next cluster
-    mov ax, [kernel_cluster]
+    mov ax, [stage2_cluster]
     mov cx, 3
     mul cx
     mov cx, 2
@@ -189,18 +189,18 @@ start:
     cmp ax, 0xFF8
     jae .read_finish
 
-    mov [kernel_cluster], ax
-    jmp .load_kernel_loop
+    mov [stage2_cluster], ax
+    jmp .load_stage2_loop
 
 .read_finish:
-    ; BEEG jump to the kernel
+    ; BEEG jump to the stage2
     mov dl, [ebr_drive_number]
 
-    mov ax, KERNEL_LOAD_SEGMENT
+    mov ax, STAGE2_LOAD_SEGMENT
     mov ds, ax
     mov es, ax
 
-    jmp KERNEL_LOAD_SEGMENT:KERNEL_LOAD_OFFSET
+    jmp STAGE2_LOAD_SEGMENT:STAGE2_LOAD_OFFSET
 
     jmp wait_key_and_reboot
 
@@ -353,12 +353,12 @@ floppy_error:
     jmp  wait_key_and_reboot
 
 ;
-; Notifies user that kernel
+; Notifies user that stage2
 ; was not found
 ;
 
-kernel_not_found_error:
-    mov  si, msg_kernel_not_found
+stage2_not_found_error:
+    mov  si, msg_stage2_not_found
     call puts
     jmp  wait_key_and_reboot
 
@@ -383,12 +383,12 @@ wait_key_and_reboot:
 
 msg_loading:            DB "Loading...", 0xD, 0xA, 0x0
 msg_read_failed:        DB "Read from disk failed!", 0xD 0xA, 0x0
-msg_kernel_not_found:   DB "KERNEL.BIN file not found!", 0xD 0xA, 0x0
-file_kernel_bin:        DB 'KERNEL  BIN'
-kernel_cluster:         DW 0
+msg_stage2_not_found:   DB "STAGE2.BIN file not found!", 0xD 0xA, 0x0
+file_stage2_bin:        DB 'STAGE2  BIN'
+stage2_cluster:         DW 0
 
-KERNEL_LOAD_SEGMENT equ 0x2000
-KERNEL_LOAD_OFFSET  equ 0
+STAGE2_LOAD_SEGMENT equ 0x2000
+STAGE2_LOAD_OFFSET  equ 0
 
 ;
 ; BOOTLOADER SIGNATURE
