@@ -58,8 +58,6 @@ bool readBootSector(FILE* disk)
     return fread(&g_BootSector, sizeof(g_BootSector), 1, disk) > 0;
 }
 
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "ConstantConditionsOC"
 bool readSectors(FILE* disk, uint32_t lba, uint32_t count, void* bufferOut)
 {
     bool ok = true;
@@ -69,7 +67,6 @@ bool readSectors(FILE* disk, uint32_t lba, uint32_t count, void* bufferOut)
 
     return ok;
 }
-#pragma clang diagnostic pop
 
 bool readFat(FILE* disk)
 {
@@ -92,8 +89,6 @@ bool readRootDirectory(FILE* disk)
     return readSectors(disk, lba, sectors, g_RootDirectory);
 }
 
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "NullDereference"
 DirectoryEntry* findFile(const char* name)
 {
     for (uint32_t i = 0; i < g_BootSector.DirEntryCount; i++) {
@@ -103,12 +98,8 @@ DirectoryEntry* findFile(const char* name)
     }
     return NULL;
 }
-#pragma clang diagnostic pop
 
 
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "ConstantConditionsOC"
-#pragma ide diagnostic ignored "NullDereference"
 bool readFile(DirectoryEntry* fileEntry, FILE* disk, uint8_t* outputBuffer)
 {
     bool ok = true;
@@ -127,11 +118,10 @@ bool readFile(DirectoryEntry* fileEntry, FILE* disk, uint8_t* outputBuffer)
             currentCluster = (*(uint16_t*)(g_Fat + fatIndex)) >> 4;
 
 
-    } while (ok && currentCluster < 0xFF8);
+    } while (ok && currentCluster < 0x0FF8);
 
     return ok;
 }
-#pragma clang diagnostic pop
 
 int main(int argc, char** argv)
 {
@@ -173,7 +163,7 @@ int main(int argc, char** argv)
     }
 
     uint8_t* buffer = (uint8_t*) malloc(fileEntry->Size + g_BootSector.BytesPerSector);
-    if(readFile(fileEntry, disk, buffer)) {
+    if (!readFile(fileEntry, disk, buffer)) {
         fprintf(stderr, "Could not read file %s!\n", argv[2]);
         free(g_Fat);
         free(g_RootDirectory);
@@ -183,11 +173,13 @@ int main(int argc, char** argv)
 
     for (size_t i = 0; i < fileEntry->Size; i++)
     {
-        if (isprint(buffer[i]))
+        if (isprint(buffer[i])) {
             fputc(buffer[i], stdout);
-        else
+        } else {
             printf("<%02x>", buffer[i]);
+        }
     }
+    printf("\n");
 
     free(buffer);
     free(g_Fat);
